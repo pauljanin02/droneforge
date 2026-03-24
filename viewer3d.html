@@ -307,8 +307,8 @@ input[type=range]::-webkit-slider-thumb{
       <div style="margin-top:12px" id="texture-section" style="display:none">
         <div class="sidebar-label" style="margin-top:12px">Texture immagine</div>
         <div class="mtl-zone" id="tex-drop">
-          <input type="file" id="tex-input" accept="image/*">
-          <div style="font-size:12px;font-weight:500">+ Carica texture (.jpg/.png)</div>
+          <input type="file" id="tex-input" accept="image/*,.exr">
+          <div style="font-size:12px;font-weight:500">+ Carica texture (.jpg / .png / .exr)</div>
         </div>
       </div>
 
@@ -738,10 +738,243 @@ document.getElementById('obj-input').addEventListener('change', function() {
 
 document.getElementById('tex-input').addEventListener('change', function() {
   if (!this.files[0]) return;
-  const url = URL.createObjectURL(this.files[0]);
-  pendingTexture = url;
-  if (pendingObjText) loadOBJFromText(pendingObjText, pendingObjName, url);
+  const file = this.files[0];
+  const name = file.name.toLowerCase();
+
+  if (name.endsWith('.exr')) {
+    loadEXRTexture(file);
+  } else {
+    const url = URL.createObjectURL(file);
+    pendingTexture = url;
+    if (pendingObjText) loadOBJFromText(pendingObjText, pendingObjName, url);
+  }
 });
+
+// ---- EXR DECODER ----
+// Minimal EXR reader: supports 32-bit float RGBA scanline uncompressed and ZIP/ZIPS
+async function loadEXRTexture(file) {
+  document.getElementById('load-txt') && (document.getElementById('load-txt').textContent = 'Decodifica EXR...');
+  document.getElementById('loading').classList.remove('hidden');
+
+  try {
+    const buf = await file.arrayBuffer();
+    const view = new DataView(buf);
+
+    // Check magic number 0x76235401
+    const magic = view.getUint32(0, true);
+    if (magic !== 0x01544523 && magic !== 0x76235401) throw new Error('Non è un file EXR valido');
+
+    // Parse header to get width, height, compression, channels
+    let offset = 8; // skip magic + version
+    let width = 0, height = 0, compression = 0;
+    let channels = []; // [{name, type, xSampling, ySampling}]
+
+    const readString = () => {
+      let s = '';
+      while (offset < buf.byteLength) {
+        const c = view.getUint8(offset++);
+        if (c === 0) break;
+        s += String.fromCharCode(c);
+      }
+      return s;
+    };
+
+    while (true) {
+      const attrName = readString();
+      if (attrName === '') break;
+      const attrType = readString();
+      const attrSize = view.getInt32(offset, true); offset += 4;
+      const attrEnd = offset + attrSize;
+
+      if (attrName === 'dataWindow') {
+        const xMin = view.getInt32(offset, true);
+        const yMin = view.getInt32(offset+4, true);
+        const xMax = view.getInt32(offset+8, true);
+        const yMax = view.getInt32(offset+12, true);
+        width = xMax - xMin + 1;
+        height = yMax - yMin + 1;
+      } else if (attrName === 'compression') {
+        compression = view.getUint8(offset);
+      } else if (attrName === 'channels') {
+        let co = offset;
+        while (co < attrEnd - 1) {
+          let cname = '';
+          while (co < attrEnd) { const c = view.getUint8(co++); if (c === 0) break; cname += String.fromCharCode(c); }
+          if (cname === '') break;
+          const ctype = view.getInt32(co, true); co += 4;
+          co += 4; // pLinear + reserved
+          const xS = view.getInt32(co, true); co += 4;
+          const yS = view.getInt32(co, true); co += 4;
+          channels.push({ name: cname, type: ctype });
+        }
+      }
+      offset = attrEnd;
+    }
+
+    if (!width || !height) throw new Error('EXR: dimensioni non trovate nell\'header');
+
+    // Skip offset table
+    const numChunks = height; // scanline images: 1 chunk per line (may vary)
+    // For scanline: offset table has `height` entries of 8 bytes each
+    const offsetTableStart = offset;
+    offset += height * 8;
+
+    // Read scanlines — only support NO_COMPRESSION (0) and ZIPS/ZIP (2,3)
+    const floatPixels = new Float32Array(width * height * 4);
+
+    // Find R G B channel indices and byte offsets per pixel
+    // EXR channels are alphabetical: A, B, G, R
+    const chanNames = channels.map(c => c.name.toUpperCase());
+    const getIdx = n => chanNames.indexOf(n);
+    const iR = getIdx('R'), iG = getIdx('G'), iB = getIdx('B'), iA = getIdx('A');
+    const nChan = channels.length;
+    const bytesPerChan = channels.map(c => c.type === 1 ? 2 : 4); // HALF=1 (2 bytes), FLOAT=2 (4 bytes)
+    const bytesPerPixel = bytesPerChan.reduce((a, b) => a + b, 0);
+
+    // Use canvas to do the EXR → LDR conversion
+    const canvas = document.createElement('canvas');
+    canvas.width = width; canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    const imgData = ctx.createImageData(width, height);
+
+    let readOffset = offsetTableStart + height * 8;
+
+    const readHalf = (off) => {
+      const h = view.getUint16(off, true);
+      const exp = (h >> 10) & 0x1f;
+      const mant = h & 0x3ff;
+      if (exp === 0) return mant * 5.96046e-8;
+      if (exp === 31) return mant ? NaN : Infinity;
+      return ((mant / 1024) + 1) * Math.pow(2, exp - 15);
+    };
+
+    for (let y = 0; y < height; y++) {
+      // Read scanline header
+      const yCoord = view.getInt32(readOffset, true); readOffset += 4;
+      const dataSize = view.getInt32(readOffset, true); readOffset += 4;
+
+      let lineData;
+      if (compression === 0) {
+        // NO_COMPRESSION
+        lineData = new DataView(buf, readOffset, dataSize);
+        readOffset += dataSize;
+      } else if (compression === 2 || compression === 3) {
+        // ZIP / ZIPS — decompress with DecompressionStream
+        const compressed = new Uint8Array(buf, readOffset, dataSize);
+        readOffset += dataSize;
+        try {
+          const ds = new DecompressionStream('deflate-raw');
+          const writer = ds.writable.getWriter();
+          writer.write(compressed); writer.close();
+          const chunks = [];
+          const reader2 = ds.readable.getReader();
+          while (true) {
+            const { done, value } = await reader2.read();
+            if (done) break;
+            chunks.push(value);
+          }
+          const total = chunks.reduce((s, c) => s + c.length, 0);
+          const out = new Uint8Array(total);
+          let pos = 0;
+          for (const c of chunks) { out.set(c, pos); pos += c.length; }
+
+          // EXR ZIP: reorder bytes (predictor)
+          const reordered = new Uint8Array(out.length);
+          const half = Math.ceil(out.length / 2);
+          for (let i = 0; i < half; i++) reordered[i*2] = out[i];
+          for (let i = 0; i < out.length - half; i++) reordered[i*2+1] = out[half+i];
+          // delta decode
+          for (let i = 1; i < reordered.length; i++) reordered[i] = (reordered[i-1] + reordered[i] - 128) & 0xff;
+
+          lineData = new DataView(reordered.buffer);
+        } catch(e) {
+          // fallback: skip line
+          lineData = null;
+        }
+      } else {
+        readOffset += dataSize; lineData = null;
+      }
+
+      if (!lineData) continue;
+
+      // Decode pixels in this scanline
+      // EXR stores channels separately per line: all R values, then all G, then all B...
+      // channel order is alphabetical
+      const chanOffsets = [];
+      let co2 = 0;
+      for (let ci = 0; ci < nChan; ci++) {
+        chanOffsets.push(co2);
+        co2 += width * bytesPerChan[ci];
+      }
+
+      for (let x = 0; x < width; x++) {
+        let r = 0, g = 0, b = 0, a = 1;
+
+        for (let ci = 0; ci < nChan; ci++) {
+          const byteOff = chanOffsets[ci] + x * bytesPerChan[ci];
+          let val;
+          if (channels[ci].type === 1) { // HALF
+            val = readHalf.call(null, (() => { 
+              // need absolute offset in lineData
+              return byteOff;
+            })());
+            // readHalf needs DataView
+            const h = lineData.getUint16(byteOff, true);
+            const exp2 = (h >> 10) & 0x1f;
+            const mant2 = h & 0x3ff;
+            if (exp2 === 0) val = mant2 * 5.96046e-8;
+            else if (exp2 === 31) val = 1;
+            else val = ((mant2 / 1024) + 1) * Math.pow(2, exp2 - 15);
+          } else { // FLOAT
+            val = lineData.getFloat32(byteOff, true);
+          }
+          if (ci === iR) r = val;
+          else if (ci === iG) g = val;
+          else if (ci === iB) b = val;
+          else if (ci === iA) a = val;
+        }
+
+        // Tone map: simple Reinhard
+        const exposure = 1.5;
+        r = r * exposure; g = g * exposure; b = b * exposure;
+        r = r / (1 + r); g = g / (1 + g); b = b / (1 + b);
+        // Gamma 2.2
+        r = Math.pow(Math.max(0, r), 1/2.2);
+        g = Math.pow(Math.max(0, g), 1/2.2);
+        b = Math.pow(Math.max(0, b), 1/2.2);
+
+        const pi = (y * width + x) * 4;
+        imgData.data[pi]   = Math.min(255, r * 255);
+        imgData.data[pi+1] = Math.min(255, g * 255);
+        imgData.data[pi+2] = Math.min(255, b * 255);
+        imgData.data[pi+3] = 255;
+      }
+    }
+
+    ctx.putImageData(imgData, 0, 0);
+    const dataUrl = canvas.toDataURL('image/png');
+    pendingTexture = dataUrl;
+    if (pendingObjText) loadOBJFromText(pendingObjText, pendingObjName, dataUrl);
+    else {
+      document.getElementById('loading').classList.add('hidden');
+      // update existing model texture
+      if (currentModel) {
+        currentModel.traverse(c => {
+          if (c.isMesh) {
+            const loader = new THREE.TextureLoader();
+            c.material.map = loader.load(dataUrl);
+            c.material.needsUpdate = true;
+          }
+        });
+      }
+    }
+
+  } catch(err) {
+    document.getElementById('loading').classList.add('hidden');
+    alert('Errore lettura EXR: ' + err.message + '\n\nProva a convertire la texture in PNG con uno strumento esterno (es. Blender, GIMP, o imagemagick).');
+    console.error(err);
+  }
+}
 
 // Drag and drop on obj-drop
 const objDrop = document.getElementById('obj-drop');
