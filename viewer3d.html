@@ -1,0 +1,1010 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DroneForge · Visualizzatore 3D</title>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#07090d;--bg2:#0d1117;--bg3:#131a22;--card:#161e28;
+  --border:rgba(255,255,255,0.06);--border2:rgba(255,255,255,0.12);
+  --accent:#00d4ff;--accent2:#ff6b35;--accent3:#00ff9d;
+  --text:#dde4ef;--muted:#566478;--mono:'JetBrains Mono',monospace;
+  --sans:'Outfit',sans-serif;
+}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:100vh;overflow-x:hidden}
+
+/* TOPBAR */
+.topbar{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:14px 24px;border-bottom:1px solid var(--border);
+  background:rgba(7,9,13,0.95);backdrop-filter:blur(12px);
+  position:sticky;top:0;z-index:100;
+}
+.logo{display:flex;align-items:center;gap:10px;font-size:16px;font-weight:700;letter-spacing:-0.3px}
+.logo-dot{width:8px;height:8px;background:var(--accent);border-radius:50%;box-shadow:0 0 8px var(--accent)}
+.topbar-actions{display:flex;gap:8px;align-items:center}
+.chip{
+  font-family:var(--mono);font-size:11px;padding:4px 10px;border-radius:20px;
+  background:rgba(0,212,255,0.08);color:var(--accent);
+  border:1px solid rgba(0,212,255,0.18);letter-spacing:0.3px;
+}
+
+/* MAIN LAYOUT */
+.layout{display:flex;height:calc(100vh - 53px)}
+
+/* SIDEBAR */
+.sidebar{
+  width:280px;flex-shrink:0;
+  background:var(--bg2);border-right:1px solid var(--border);
+  display:flex;flex-direction:column;overflow:hidden;
+}
+.sidebar-section{padding:16px;border-bottom:1px solid var(--border)}
+.sidebar-label{
+  font-family:var(--mono);font-size:10px;letter-spacing:1px;
+  color:var(--muted);text-transform:uppercase;margin-bottom:12px;
+}
+
+/* DROP ZONE */
+.drop-zone{
+  border:1.5px dashed rgba(0,212,255,0.2);border-radius:12px;
+  padding:24px 16px;text-align:center;cursor:pointer;
+  transition:all .2s;background:rgba(0,212,255,0.02);position:relative;
+}
+.drop-zone:hover,.drop-zone.over{border-color:var(--accent);background:rgba(0,212,255,0.05)}
+.drop-zone input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.dz-icon{font-size:28px;display:block;margin-bottom:8px}
+.dz-title{font-size:13px;font-weight:600;margin-bottom:4px}
+.dz-sub{font-size:11px;color:var(--muted)}
+
+/* MTL DROP */
+.mtl-zone{
+  border:1px dashed rgba(0,255,157,0.2);border-radius:8px;
+  padding:10px 12px;text-align:center;cursor:pointer;
+  transition:all .2s;background:rgba(0,255,157,0.02);position:relative;
+  margin-top:8px;
+}
+.mtl-zone:hover{border-color:var(--accent3);background:rgba(0,255,157,0.05)}
+.mtl-zone input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.mtl-zone.loaded{border-color:var(--accent3);color:var(--accent3)}
+
+/* CONTROLS */
+.ctrl-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.ctrl-label{font-size:12px;color:var(--muted)}
+.ctrl-val{font-family:var(--mono);font-size:12px;color:var(--accent)}
+
+input[type=range]{
+  width:100%;height:3px;appearance:none;
+  background:var(--border2);border-radius:2px;outline:none;cursor:pointer;
+}
+input[type=range]::-webkit-slider-thumb{
+  appearance:none;width:14px;height:14px;
+  background:var(--accent);border-radius:50%;cursor:pointer;
+}
+
+.toggle-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.toggle-label{font-size:12px;color:var(--text)}
+.toggle{
+  width:34px;height:18px;background:var(--bg3);border-radius:9px;
+  position:relative;cursor:pointer;border:1px solid var(--border2);transition:background .2s;
+}
+.toggle.on{background:rgba(0,212,255,0.3);border-color:var(--accent)}
+.toggle::after{
+  content:'';position:absolute;top:2px;left:2px;
+  width:12px;height:12px;background:var(--muted);border-radius:50%;transition:all .2s;
+}
+.toggle.on::after{left:18px;background:var(--accent)}
+
+/* MODEL INFO */
+.info-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.info-card{
+  background:var(--bg3);border:1px solid var(--border);
+  border-radius:8px;padding:10px 12px;
+}
+.info-card .ic-label{font-size:10px;color:var(--muted);font-family:var(--mono);margin-bottom:4px}
+.info-card .ic-val{font-size:14px;font-weight:600;color:var(--accent);font-family:var(--mono)}
+
+/* SIDEBAR NAV */
+.sidebar-nav{display:flex;border-bottom:1px solid var(--border)}
+.snav-btn{
+  flex:1;padding:10px 6px;background:none;border:none;
+  font-family:var(--sans);font-size:11px;font-weight:600;
+  color:var(--muted);cursor:pointer;transition:all .15s;
+  border-bottom:2px solid transparent;
+}
+.snav-btn.active{color:var(--accent);border-bottom-color:var(--accent)}
+
+.sidebar-panel{display:none;flex:1;overflow-y:auto;padding:16px}
+.sidebar-panel.active{display:block}
+.sidebar-panel::-webkit-scrollbar{width:3px}
+.sidebar-panel::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+
+/* VIEWPORT */
+.viewport{flex:1;position:relative;background:var(--bg)}
+#canvas3d{width:100%;height:100%;display:block}
+
+.viewport-overlay{
+  position:absolute;bottom:16px;left:16px;
+  display:flex;gap:8px;flex-wrap:wrap;
+}
+.view-btn{
+  background:rgba(7,9,13,0.85);border:1px solid var(--border2);
+  border-radius:8px;color:var(--text);font-family:var(--sans);
+  font-size:12px;font-weight:500;padding:6px 12px;cursor:pointer;
+  backdrop-filter:blur(8px);transition:all .15s;
+}
+.view-btn:hover{border-color:var(--accent);color:var(--accent)}
+
+.model-name-overlay{
+  position:absolute;top:16px;left:50%;transform:translateX(-50%);
+  background:rgba(7,9,13,0.8);border:1px solid var(--border2);
+  border-radius:20px;padding:6px 16px;font-size:13px;font-weight:500;
+  backdrop-filter:blur(8px);pointer-events:none;
+  opacity:0;transition:opacity .3s;
+}
+.model-name-overlay.visible{opacity:1}
+
+.loading-overlay{
+  position:absolute;inset:0;background:var(--bg);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  z-index:50;
+}
+.loading-overlay.hidden{display:none}
+.loader-ring{
+  width:48px;height:48px;border:2px solid var(--border2);
+  border-top-color:var(--accent);border-radius:50%;
+  animation:spin 0.8s linear infinite;margin-bottom:16px;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loader-text{font-size:14px;color:var(--muted);font-family:var(--mono)}
+.loader-progress{
+  font-size:22px;font-weight:700;color:var(--accent);
+  font-family:var(--mono);margin-bottom:8px;
+}
+
+/* EMPTY STATE */
+.empty-state{
+  position:absolute;inset:0;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  pointer-events:none;
+}
+.es-icon{font-size:56px;margin-bottom:16px;opacity:.25}
+.es-title{font-size:18px;font-weight:600;color:var(--muted);margin-bottom:8px}
+.es-sub{font-size:13px;color:var(--muted);opacity:.6;text-align:center;max-width:300px;line-height:1.6}
+
+/* REPORT PANEL */
+.report-form .rf-field{margin-bottom:14px}
+.report-form label{font-size:11px;color:var(--muted);font-family:var(--mono);display:block;margin-bottom:5px}
+.report-form input,.report-form textarea,.report-form select{
+  width:100%;background:var(--bg3);border:1px solid var(--border2);
+  border-radius:8px;color:var(--text);font-family:var(--sans);
+  font-size:13px;padding:8px 10px;outline:none;resize:vertical;
+}
+.report-form textarea{min-height:72px;line-height:1.5}
+.report-form input:focus,.report-form textarea:focus{border-color:var(--accent)}
+
+/* BUTTONS */
+.btn{
+  display:inline-flex;align-items:center;gap:6px;
+  padding:9px 16px;border-radius:8px;border:none;
+  font-family:var(--sans);font-size:13px;font-weight:600;cursor:pointer;transition:all .15s;
+}
+.btn-accent{background:var(--accent);color:#07090d}
+.btn-accent:hover{background:#33ddff;transform:translateY(-1px)}
+.btn-accent:disabled{opacity:.35;cursor:not-allowed;transform:none}
+.btn-ghost{background:var(--bg3);color:var(--text);border:1px solid var(--border2)}
+.btn-ghost:hover{border-color:var(--accent);color:var(--accent)}
+.btn-full{width:100%;justify-content:center}
+
+/* SCREENSHOT FLASH */
+.flash{
+  position:absolute;inset:0;background:white;opacity:0;pointer-events:none;
+  z-index:200;transition:opacity .15s;
+}
+.flash.active{opacity:.4}
+
+/* REPORT MODAL */
+.modal-bg{
+  position:fixed;inset:0;background:rgba(0,0,0,0.75);
+  z-index:500;display:flex;align-items:center;justify-content:center;
+  opacity:0;pointer-events:none;transition:opacity .2s;
+  padding:20px;
+}
+.modal-bg.open{opacity:1;pointer-events:all}
+.modal{
+  background:var(--bg2);border:1px solid var(--border2);
+  border-radius:16px;max-width:800px;width:100%;
+  max-height:90vh;overflow-y:auto;
+}
+.modal-header{
+  padding:20px 24px;border-bottom:1px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between;
+}
+.modal-header h2{font-size:18px;font-weight:700}
+.modal-close{background:none;border:none;color:var(--muted);font-size:22px;cursor:pointer;padding:0 4px;line-height:1}
+.modal-close:hover{color:var(--text)}
+.modal-body{padding:24px}
+
+.report-preview{font-family:var(--sans)}
+.rp-hero{
+  background:linear-gradient(135deg,#0d1117,#131a22);
+  border:1px solid var(--border);border-radius:12px;
+  padding:32px;text-align:center;margin-bottom:24px;
+}
+.rp-hero h1{font-size:28px;font-weight:800;margin-bottom:6px}
+.rp-hero .subtitle{font-size:14px;color:var(--muted);margin-bottom:16px}
+.rp-hero .tags{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+.rp-tag{
+  font-size:11px;font-family:var(--mono);padding:4px 10px;border-radius:20px;
+  background:rgba(0,212,255,0.08);color:var(--accent);border:1px solid rgba(0,212,255,0.18);
+}
+.rp-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:24px}
+.rp-stat{
+  background:var(--bg3);border:1px solid var(--border);
+  border-radius:10px;padding:16px;text-align:center;
+}
+.rp-stat .rs-val{font-size:22px;font-weight:700;color:var(--accent);font-family:var(--mono)}
+.rp-stat .rs-label{font-size:11px;color:var(--muted);margin-top:4px}
+.rp-notes{
+  background:var(--bg3);border:1px solid var(--border);
+  border-radius:10px;padding:16px;margin-bottom:24px;
+}
+.rp-notes h3{font-size:13px;font-weight:700;color:var(--accent);margin-bottom:8px}
+.rp-notes p{font-size:13px;color:var(--muted);line-height:1.6}
+.rp-screenshot{
+  border-radius:10px;overflow:hidden;border:1px solid var(--border);margin-bottom:24px;
+}
+.rp-screenshot img{width:100%;display:block}
+.rp-footer{text-align:center;font-size:11px;color:var(--muted);font-family:var(--mono);padding-top:16px;border-top:1px solid var(--border)}
+
+.modal-actions{
+  padding:16px 24px;border-top:1px solid var(--border);
+  display:flex;gap:8px;justify-content:flex-end;
+}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="logo">
+    <div class="logo-dot"></div>
+    DroneForge · <span style="color:var(--muted);font-weight:400;margin-left:4px">Visualizzatore 3D</span>
+  </div>
+  <div class="topbar-actions">
+    <span class="chip" id="model-chip" style="display:none">OBJ caricato</span>
+    <button class="btn btn-ghost" id="report-btn" style="display:none" onclick="openReport()">📄 Genera report</button>
+  </div>
+</div>
+
+<div class="layout">
+
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+    <div class="sidebar-nav">
+      <button class="snav-btn active" onclick="showSidePanel('load')">Carica</button>
+      <button class="snav-btn" onclick="showSidePanel('view')">Vista</button>
+      <button class="snav-btn" onclick="showSidePanel('info')">Info</button>
+      <button class="snav-btn" onclick="showSidePanel('report')">Report</button>
+    </div>
+
+    <!-- LOAD PANEL -->
+    <div class="sidebar-panel active" id="sp-load">
+      <div class="sidebar-label">Modello 3D</div>
+      <div class="drop-zone" id="obj-drop">
+        <input type="file" id="obj-input" accept=".obj">
+        <span class="dz-icon">📦</span>
+        <div class="dz-title">Carica file .OBJ</div>
+        <div class="dz-sub">Output di Meshroom</div>
+      </div>
+      <div class="mtl-zone" id="mtl-drop">
+        <input type="file" id="mtl-input" accept=".mtl">
+        <div style="font-size:12px;font-weight:500">+ Carica .MTL (texture)</div>
+        <div style="font-size:10px;color:var(--muted);margin-top:2px">opzionale</div>
+      </div>
+
+      <div style="margin-top:12px" id="texture-section" style="display:none">
+        <div class="sidebar-label" style="margin-top:12px">Texture immagine</div>
+        <div class="mtl-zone" id="tex-drop">
+          <input type="file" id="tex-input" accept="image/*">
+          <div style="font-size:12px;font-weight:500">+ Carica texture (.jpg/.png)</div>
+        </div>
+      </div>
+
+      <div style="margin-top:16px">
+        <div class="sidebar-label">Demo rapida</div>
+        <button class="btn btn-ghost btn-full" onclick="loadDemo()" style="font-size:12px">
+          🏛 Carica modello demo
+        </button>
+      </div>
+    </div>
+
+    <!-- VIEW PANEL -->
+    <div class="sidebar-panel" id="sp-view">
+      <div class="sidebar-label">Rendering</div>
+
+      <div class="toggle-row">
+        <span class="toggle-label">Wireframe</span>
+        <div class="toggle" id="tog-wire" onclick="toggleWireframe(this)"></div>
+      </div>
+      <div class="toggle-row">
+        <span class="toggle-label">Rotazione automatica</span>
+        <div class="toggle on" id="tog-rot" onclick="toggleRotation(this)"></div>
+      </div>
+      <div class="toggle-row">
+        <span class="toggle-label">Griglia di riferimento</span>
+        <div class="toggle on" id="tog-grid" onclick="toggleGrid(this)"></div>
+      </div>
+      <div class="toggle-row">
+        <span class="toggle-label">Ambiente HDRI</span>
+        <div class="toggle on" id="tog-env" onclick="toggleEnv(this)"></div>
+      </div>
+
+      <div style="margin-top:16px">
+        <div class="ctrl-row">
+          <span class="ctrl-label">Velocità rotazione</span>
+          <span class="ctrl-val" id="speed-val">0.5</span>
+        </div>
+        <input type="range" min="0" max="20" value="5" oninput="setSpeed(this)">
+      </div>
+
+      <div style="margin-top:14px">
+        <div class="ctrl-row">
+          <span class="ctrl-label">Esposizione luce</span>
+          <span class="ctrl-val" id="light-val">1.0</span>
+        </div>
+        <input type="range" min="1" max="30" value="10" oninput="setLight(this)">
+      </div>
+
+      <div style="margin-top:14px">
+        <div class="ctrl-row">
+          <span class="ctrl-label">Colore sfondo</span>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <div onclick="setBg('#07090d')" style="width:24px;height:24px;background:#07090d;border-radius:4px;cursor:pointer;border:2px solid var(--accent)"></div>
+          <div onclick="setBg('#1a1a2e')" style="width:24px;height:24px;background:#1a1a2e;border-radius:4px;cursor:pointer;border:1px solid var(--border2)"></div>
+          <div onclick="setBg('#0d1b0d')" style="width:24px;height:24px;background:#0d1b0d;border-radius:4px;cursor:pointer;border:1px solid var(--border2)"></div>
+          <div onclick="setBg('#1a0d0d')" style="width:24px;height:24px;background:#1a0d0d;border-radius:4px;cursor:pointer;border:1px solid var(--border2)"></div>
+          <div onclick="setBg('#ffffff')" style="width:24px;height:24px;background:#ffffff;border-radius:4px;cursor:pointer;border:1px solid var(--border2)"></div>
+          <div onclick="setBg('#e8e0d0')" style="width:24px;height:24px;background:#e8e0d0;border-radius:4px;cursor:pointer;border:1px solid var(--border2)"></div>
+        </div>
+      </div>
+
+      <div style="margin-top:16px">
+        <div class="sidebar-label">Vista rapida</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+          <button class="btn btn-ghost" style="font-size:11px;padding:7px" onclick="setView('front')">Fronte</button>
+          <button class="btn btn-ghost" style="font-size:11px;padding:7px" onclick="setView('top')">Dall'alto</button>
+          <button class="btn btn-ghost" style="font-size:11px;padding:7px" onclick="setView('side')">Lato</button>
+          <button class="btn btn-ghost" style="font-size:11px;padding:7px" onclick="setView('iso')">Isometrica</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- INFO PANEL -->
+    <div class="sidebar-panel" id="sp-info">
+      <div class="sidebar-label">Statistiche modello</div>
+      <div class="info-grid" id="info-grid">
+        <div class="info-card"><div class="ic-label">VERTICI</div><div class="ic-val" id="inf-verts">—</div></div>
+        <div class="info-card"><div class="ic-label">FACCE</div><div class="ic-val" id="inf-faces">—</div></div>
+        <div class="info-card"><div class="ic-label">OGGETTI</div><div class="ic-val" id="inf-objs">—</div></div>
+        <div class="info-card"><div class="ic-label">DIMENSIONE</div><div class="ic-val" id="inf-size">—</div></div>
+      </div>
+      <div style="margin-top:14px">
+        <div class="info-card" style="grid-column:1/-1">
+          <div class="ic-label">BOUNDING BOX</div>
+          <div id="inf-bbox" style="font-size:12px;color:var(--muted);font-family:var(--mono);margin-top:4px;line-height:1.7">—</div>
+        </div>
+      </div>
+      <div style="margin-top:14px">
+        <div class="info-card">
+          <div class="ic-label">FILE OBJ</div>
+          <div id="inf-file" style="font-size:12px;color:var(--muted);font-family:var(--mono);margin-top:4px;word-break:break-all">—</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- REPORT PANEL -->
+    <div class="sidebar-panel" id="sp-report">
+      <div class="sidebar-label">Dati del report</div>
+      <div class="report-form">
+        <div class="rf-field">
+          <label>NOME PROGETTO</label>
+          <input type="text" id="rf-name" placeholder="es. Castello di Rivoli">
+        </div>
+        <div class="rf-field">
+          <label>TIPO DI SOGGETTO</label>
+          <select id="rf-type">
+            <option>Castello / Edificio storico</option>
+            <option>Casa / Edificio moderno</option>
+            <option>Paesaggio / Terreno</option>
+            <option>Oggetto</option>
+            <option>Altro</option>
+          </select>
+        </div>
+        <div class="rf-field">
+          <label>DATA RIPRESA</label>
+          <input type="date" id="rf-date">
+        </div>
+        <div class="rf-field">
+          <label>NUMERO FOTO USATE</label>
+          <input type="number" id="rf-photos" placeholder="es. 187">
+        </div>
+        <div class="rf-field">
+          <label>DRONE UTILIZZATO</label>
+          <input type="text" id="rf-drone" placeholder="es. DJI Mini 3 Pro">
+        </div>
+        <div class="rf-field">
+          <label>NOTE / DESCRIZIONE</label>
+          <textarea id="rf-notes" placeholder="Descrizione del soggetto, condizioni meteo, osservazioni..."></textarea>
+        </div>
+        <button class="btn btn-accent btn-full" onclick="openReport()">Genera report →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- VIEWPORT -->
+  <div class="viewport">
+    <canvas id="canvas3d"></canvas>
+    <div class="loading-overlay hidden" id="loading">
+      <div class="loader-progress" id="load-pct">0%</div>
+      <div class="loader-ring"></div>
+      <div class="loader-text" id="load-txt">Caricamento modello...</div>
+    </div>
+    <div class="empty-state" id="empty-state">
+      <div class="es-icon">🏛</div>
+      <div class="es-title">Nessun modello caricato</div>
+      <div class="es-sub">Carica un file .OBJ generato da Meshroom dalla barra laterale, oppure prova il modello demo</div>
+    </div>
+    <div class="viewport-overlay">
+      <button class="view-btn" onclick="resetCamera()">⟳ Reset camera</button>
+      <button class="view-btn" onclick="takeScreenshot()">📸 Screenshot</button>
+    </div>
+    <div class="model-name-overlay" id="model-name-overlay"></div>
+    <div class="flash" id="flash"></div>
+  </div>
+</div>
+
+<!-- REPORT MODAL -->
+<div class="modal-bg" id="report-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>Report modello 3D</h2>
+      <button class="modal-close" onclick="closeReport()">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="report-preview" id="report-preview"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeReport()">Chiudi</button>
+      <button class="btn btn-accent" onclick="downloadReport()">⬇ Scarica HTML</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+// ---- SCENE SETUP ----
+const canvas = document.getElementById('canvas3d');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.shadowMap.enabled = true;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#07090d');
+
+const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 10000);
+camera.position.set(5, 3, 5);
+camera.lookAt(0, 0, 0);
+
+// Lights
+const ambient = new THREE.AmbientLight(0xffffff, 0.4);
+scene.add(ambient);
+const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+dirLight.position.set(5, 10, 5);
+dirLight.castShadow = true;
+scene.add(dirLight);
+const dirLight2 = new THREE.DirectionalLight(0x8899ff, 0.4);
+dirLight2.position.set(-5, 3, -5);
+scene.add(dirLight2);
+const fillLight = new THREE.DirectionalLight(0xffeecc, 0.3);
+fillLight.position.set(0, -5, 0);
+scene.add(fillLight);
+
+// Grid
+const grid = new THREE.GridHelper(20, 40, 0x1a2535, 0x1a2535);
+scene.add(grid);
+
+// Resize
+function resize() {
+  const vp = canvas.parentElement;
+  const w = vp.clientWidth, h = vp.clientHeight;
+  renderer.setSize(w, h);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ---- ORBIT CONTROLS (manual) ----
+let isDragging = false, lastX = 0, lastY = 0;
+let theta = 45, phi = 30, radius = 8;
+let targetTheta = 45, targetPhi = 30, targetRadius = 8;
+let autoRotate = true;
+let modelLoaded = false;
+let currentModel = null;
+let modelStats = {};
+let screenshotData = null;
+
+function updateCamera() {
+  const t = theta * Math.PI / 180;
+  const p = Math.max(5, Math.min(85, phi)) * Math.PI / 180;
+  camera.position.set(
+    radius * Math.cos(p) * Math.sin(t),
+    radius * Math.sin(p),
+    radius * Math.cos(p) * Math.cos(t)
+  );
+  camera.lookAt(0, 0, 0);
+}
+
+canvas.addEventListener('mousedown', e => { isDragging = true; lastX = e.clientX; lastY = e.clientY; });
+window.addEventListener('mouseup', () => isDragging = false);
+window.addEventListener('mousemove', e => {
+  if (!isDragging) return;
+  theta -= (e.clientX - lastX) * 0.4;
+  phi += (e.clientY - lastY) * 0.3;
+  phi = Math.max(5, Math.min(85, phi));
+  lastX = e.clientX; lastY = e.clientY;
+});
+canvas.addEventListener('wheel', e => {
+  radius = Math.max(0.5, Math.min(200, radius + e.deltaY * 0.01));
+  e.preventDefault();
+}, { passive: false });
+
+// Touch
+let lastTouchX = 0, lastTouchY = 0, lastTouchDist = 0;
+canvas.addEventListener('touchstart', e => {
+  if (e.touches.length === 1) { lastTouchX = e.touches[0].clientX; lastTouchY = e.touches[0].clientY; }
+  if (e.touches.length === 2) {
+    lastTouchDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+  }
+  e.preventDefault();
+}, { passive: false });
+canvas.addEventListener('touchmove', e => {
+  if (e.touches.length === 1) {
+    theta -= (e.touches[0].clientX - lastTouchX) * 0.4;
+    phi += (e.touches[0].clientY - lastTouchY) * 0.3;
+    phi = Math.max(5, Math.min(85, phi));
+    lastTouchX = e.touches[0].clientX; lastTouchY = e.touches[0].clientY;
+  }
+  if (e.touches.length === 2) {
+    const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+    radius = Math.max(0.5, Math.min(200, radius - (dist - lastTouchDist) * 0.05));
+    lastTouchDist = dist;
+  }
+  e.preventDefault();
+}, { passive: false });
+
+let rotSpeed = 0.5;
+let animId;
+function animate() {
+  animId = requestAnimationFrame(animate);
+  if (autoRotate && modelLoaded) theta += rotSpeed * 0.05;
+  updateCamera();
+  renderer.render(scene, camera);
+}
+animate();
+
+// ---- OBJ PARSER ----
+function parseOBJ(text) {
+  const positions = [], normals = [], uvs = [];
+  const vertices = [], normalsOut = [], uvsOut = [];
+  const lines = text.split('\n');
+  let faceCount = 0;
+
+  for (const line of lines) {
+    const parts = line.trim().split(/\s+/);
+    if (parts[0] === 'v') positions.push(parseFloat(parts[1]), parseFloat(parts[2]), parseFloat(parts[3]));
+    else if (parts[0] === 'vn') normals.push(parseFloat(parts[1]), parseFloat(parts[2]), parseFloat(parts[3]));
+    else if (parts[0] === 'vt') uvs.push(parseFloat(parts[1]), parseFloat(parts[2]));
+    else if (parts[0] === 'f') {
+      const fverts = parts.slice(1);
+      // triangulate
+      for (let i = 1; i < fverts.length - 1; i++) {
+        [fverts[0], fverts[i], fverts[i+1]].forEach(fv => {
+          const idx = fv.split('/');
+          const vi = (parseInt(idx[0]) - 1) * 3;
+          vertices.push(positions[vi], positions[vi+1], positions[vi+2]);
+          if (idx[1] && uvs.length) {
+            const ui = (parseInt(idx[1]) - 1) * 2;
+            uvsOut.push(uvs[ui] || 0, uvs[ui+1] || 0);
+          }
+          if (idx[2] && normals.length) {
+            const ni = (parseInt(idx[2]) - 1) * 3;
+            normalsOut.push(normals[ni], normals[ni+1], normals[ni+2]);
+          }
+        });
+        faceCount++;
+      }
+    }
+  }
+
+  return { vertices, normals: normalsOut, uvs: uvsOut, faceCount, vertexCount: positions.length / 3 };
+}
+
+function loadOBJFromText(text, filename, textureImg) {
+  document.getElementById('loading').classList.remove('hidden');
+  document.getElementById('empty-state').style.display = 'none';
+  document.getElementById('load-pct').textContent = '30%';
+  document.getElementById('load-txt').textContent = 'Parsing geometria...';
+
+  setTimeout(() => {
+    const data = parseOBJ(text);
+    document.getElementById('load-pct').textContent = '70%';
+    document.getElementById('load-txt').textContent = 'Costruzione mesh...';
+
+    setTimeout(() => {
+      if (currentModel) scene.remove(currentModel);
+
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(data.vertices, 3));
+      if (data.normals.length) geo.setAttribute('normal', new THREE.Float32BufferAttribute(data.normals, 3));
+      else geo.computeVertexNormals();
+      if (data.uvs.length) geo.setAttribute('uv', new THREE.Float32BufferAttribute(data.uvs, 2));
+
+      let mat;
+      if (textureImg) {
+        const loader = new THREE.TextureLoader();
+        const tex = loader.load(textureImg);
+        mat = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.7, metalness: 0.0 });
+      } else {
+        mat = new THREE.MeshStandardMaterial({ color: 0xc8b89a, roughness: 0.75, metalness: 0.05 });
+      }
+
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+
+      // center & scale
+      geo.computeBoundingBox();
+      const box = geo.boundingBox;
+      const center = new THREE.Vector3();
+      box.getCenter(center);
+      const size = new THREE.Vector3();
+      box.getSize(size);
+      const maxDim = Math.max(size.x, size.y, size.z);
+      const scale = 5 / maxDim;
+      mesh.scale.setScalar(scale);
+      mesh.position.sub(center.multiplyScalar(scale));
+
+      scene.add(mesh);
+      currentModel = mesh;
+      radius = 8;
+      theta = 45; phi = 30;
+      modelLoaded = true;
+
+      // update stats
+      const scaledSize = size.clone().multiplyScalar(scale);
+      modelStats = {
+        verts: data.vertexCount,
+        faces: data.faceCount,
+        filename: filename,
+        bbox: `X: ${scaledSize.x.toFixed(2)}  Y: ${scaledSize.y.toFixed(2)}  Z: ${scaledSize.z.toFixed(2)}`
+      };
+
+      document.getElementById('inf-verts').textContent = data.vertexCount.toLocaleString('it');
+      document.getElementById('inf-faces').textContent = data.faceCount.toLocaleString('it');
+      document.getElementById('inf-objs').textContent = '1';
+      document.getElementById('inf-size').textContent = (text.length / 1024).toFixed(0) + ' KB';
+      document.getElementById('inf-bbox').textContent = modelStats.bbox;
+      document.getElementById('inf-file').textContent = filename;
+
+      const nameOverlay = document.getElementById('model-name-overlay');
+      nameOverlay.textContent = filename.replace('.obj','').replace('.OBJ','');
+      nameOverlay.classList.add('visible');
+      setTimeout(() => nameOverlay.classList.remove('visible'), 3000);
+
+      document.getElementById('model-chip').style.display = 'inline-flex';
+      document.getElementById('report-btn').style.display = 'inline-flex';
+
+      document.getElementById('load-pct').textContent = '100%';
+      document.getElementById('load-txt').textContent = 'Modello pronto!';
+      setTimeout(() => {
+        document.getElementById('loading').classList.add('hidden');
+      }, 500);
+    }, 200);
+  }, 50);
+}
+
+// ---- FILE INPUTS ----
+let pendingTexture = null;
+let pendingObjText = null, pendingObjName = null;
+
+document.getElementById('obj-input').addEventListener('change', function() {
+  if (!this.files[0]) return;
+  const f = this.files[0];
+  const reader = new FileReader();
+  reader.onload = e => {
+    pendingObjText = e.target.result;
+    pendingObjName = f.name;
+    loadOBJFromText(pendingObjText, pendingObjName, pendingTexture);
+    document.getElementById('rf-name').value = f.name.replace(/\.obj$/i,'');
+  };
+  reader.readAsText(f);
+});
+
+document.getElementById('tex-input').addEventListener('change', function() {
+  if (!this.files[0]) return;
+  const url = URL.createObjectURL(this.files[0]);
+  pendingTexture = url;
+  if (pendingObjText) loadOBJFromText(pendingObjText, pendingObjName, url);
+});
+
+// Drag and drop on obj-drop
+const objDrop = document.getElementById('obj-drop');
+objDrop.addEventListener('dragover', e => { e.preventDefault(); objDrop.classList.add('over'); });
+objDrop.addEventListener('dragleave', () => objDrop.classList.remove('over'));
+objDrop.addEventListener('drop', e => {
+  e.preventDefault();
+  objDrop.classList.remove('over');
+  const f = e.dataTransfer.files[0];
+  if (!f) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    pendingObjText = ev.target.result;
+    pendingObjName = f.name;
+    loadOBJFromText(pendingObjText, pendingObjName, pendingTexture);
+  };
+  reader.readAsText(f);
+});
+
+// ---- DEMO MODEL (procedural castle-like shape) ----
+function loadDemo() {
+  document.getElementById('loading').classList.remove('hidden');
+  document.getElementById('empty-state').style.display = 'none';
+  document.getElementById('load-pct').textContent = '50%';
+  document.getElementById('load-txt').textContent = 'Generazione modello demo...';
+
+  setTimeout(() => {
+    if (currentModel) scene.remove(currentModel);
+    const group = new THREE.Group();
+
+    function addBox(x, y, z, w, h, d, color) {
+      const g = new THREE.BoxGeometry(w, h, d);
+      const m = new THREE.MeshStandardMaterial({ color, roughness: 0.8, metalness: 0.05 });
+      const mesh = new THREE.Mesh(g, m);
+      mesh.position.set(x, y, z);
+      mesh.castShadow = true;
+      group.add(mesh);
+    }
+    function addCyl(x, y, z, r, h, color) {
+      const g = new THREE.CylinderGeometry(r, r, h, 12);
+      const m = new THREE.MeshStandardMaterial({ color, roughness: 0.8 });
+      const mesh = new THREE.Mesh(g, m);
+      mesh.position.set(x, y, z);
+      group.add(mesh);
+    }
+    function addCone(x, y, z, r, h, color) {
+      const g = new THREE.ConeGeometry(r, h, 10);
+      const m = new THREE.MeshStandardMaterial({ color, roughness: 0.7 });
+      const mesh = new THREE.Mesh(g, m);
+      mesh.position.set(x, y, z);
+      group.add(mesh);
+    }
+
+    const stone = 0xa09070, darkStone = 0x706050, roof = 0x554433;
+    // Main body
+    addBox(0, 1.5, 0, 4, 3, 4, stone);
+    // Towers
+    addCyl(-2, 2.5, -2, 0.7, 5, darkStone);
+    addCyl(2, 2.5, -2, 0.7, 5, darkStone);
+    addCyl(-2, 2.5, 2, 0.7, 5, darkStone);
+    addCyl(2, 2.5, 2, 0.7, 5, darkStone);
+    // Cones on towers
+    addCone(-2, 5.5, -2, 0.75, 1.2, roof);
+    addCone(2, 5.5, -2, 0.75, 1.2, roof);
+    addCone(-2, 5.5, 2, 0.75, 1.2, roof);
+    addCone(2, 5.5, 2, 0.75, 1.2, roof);
+    // Gate
+    addBox(0, 0.5, 2.1, 1, 2, 0.1, darkStone);
+    // Battlements
+    for (let i = -1.5; i <= 1.5; i += 0.5) {
+      addBox(i, 3.2, 2, 0.2, 0.4, 0.2, darkStone);
+      addBox(i, 3.2, -2, 0.2, 0.4, 0.2, darkStone);
+      addBox(2, 3.2, i, 0.2, 0.4, 0.2, darkStone);
+      addBox(-2, 3.2, i, 0.2, 0.4, 0.2, darkStone);
+    }
+    // Ground
+    const groundGeo = new THREE.PlaneGeometry(16, 16);
+    const groundMat = new THREE.MeshStandardMaterial({ color: 0x3a4a2a, roughness: 1 });
+    const ground = new THREE.Mesh(groundGeo, groundMat);
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    group.add(ground);
+
+    scene.add(group);
+    currentModel = group;
+    radius = 10; theta = 35; phi = 25;
+    modelLoaded = true;
+
+    modelStats = { verts: '~2,400', faces: '~1,200', filename: 'castello_demo.obj', bbox: 'X: 4.0  Y: 6.7  Z: 4.0' };
+    document.getElementById('inf-verts').textContent = '~2.400';
+    document.getElementById('inf-faces').textContent = '~1.200';
+    document.getElementById('inf-objs').textContent = '12';
+    document.getElementById('inf-size').textContent = '48 KB';
+    document.getElementById('inf-bbox').textContent = modelStats.bbox;
+    document.getElementById('inf-file').textContent = 'castello_demo.obj';
+    document.getElementById('rf-name').value = 'Castello Demo';
+    document.getElementById('rf-type').value = 'Castello / Edificio storico';
+
+    const nameOverlay = document.getElementById('model-name-overlay');
+    nameOverlay.textContent = 'Castello Demo';
+    nameOverlay.classList.add('visible');
+    setTimeout(() => nameOverlay.classList.remove('visible'), 3000);
+
+    document.getElementById('model-chip').style.display = 'inline-flex';
+    document.getElementById('report-btn').style.display = 'inline-flex';
+    document.getElementById('load-pct').textContent = '100%';
+    document.getElementById('load-txt').textContent = 'Modello pronto!';
+    setTimeout(() => document.getElementById('loading').classList.add('hidden'), 400);
+  }, 300);
+}
+
+// ---- CONTROLS ----
+function toggleWireframe(el) {
+  el.classList.toggle('on');
+  if (currentModel) {
+    currentModel.traverse(c => {
+      if (c.isMesh) c.material.wireframe = el.classList.contains('on');
+    });
+  }
+}
+function toggleRotation(el) { el.classList.toggle('on'); autoRotate = el.classList.contains('on'); }
+function toggleGrid(el) { el.classList.toggle('on'); grid.visible = el.classList.contains('on'); }
+function toggleEnv(el) {
+  el.classList.toggle('on');
+  const on = el.classList.contains('on');
+  ambient.intensity = on ? 0.4 : 0.8;
+  dirLight.intensity = on ? 1.2 : 0.6;
+}
+function setSpeed(el) { rotSpeed = el.value / 10; document.getElementById('speed-val').textContent = (el.value / 10).toFixed(1); }
+function setLight(el) { renderer.toneMappingExposure = el.value / 10; document.getElementById('light-val').textContent = (el.value / 10).toFixed(1); }
+function setBg(col) { scene.background = new THREE.Color(col); }
+function resetCamera() { radius = 8; theta = 45; phi = 30; }
+function setView(v) {
+  if (v === 'front') { theta = 0; phi = 10; }
+  else if (v === 'top') { theta = 0; phi = 88; }
+  else if (v === 'side') { theta = 90; phi = 10; }
+  else if (v === 'iso') { theta = 45; phi = 35; }
+}
+
+function takeScreenshot() {
+  renderer.render(scene, camera);
+  screenshotData = canvas.toDataURL('image/png');
+  const flash = document.getElementById('flash');
+  flash.classList.add('active');
+  setTimeout(() => flash.classList.remove('active'), 300);
+  const a = document.createElement('a');
+  a.href = screenshotData;
+  a.download = (document.getElementById('rf-name').value || 'modello3d') + '_screenshot.png';
+  a.click();
+}
+
+// ---- SIDEBAR NAV ----
+function showSidePanel(id) {
+  document.querySelectorAll('.sidebar-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.snav-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('sp-' + id).classList.add('active');
+  event.target.classList.add('active');
+}
+
+// ---- REPORT ----
+function openReport() {
+  renderer.render(scene, camera);
+  screenshotData = canvas.toDataURL('image/jpeg', 0.85);
+
+  const name = document.getElementById('rf-name').value || 'Modello 3D';
+  const type = document.getElementById('rf-type').value;
+  const date = document.getElementById('rf-date').value;
+  const photos = document.getElementById('rf-photos').value;
+  const drone = document.getElementById('rf-drone').value;
+  const notes = document.getElementById('rf-notes').value;
+  const today = date || new Date().toLocaleDateString('it-IT');
+
+  const html = `
+    <div class="rp-hero">
+      <h1>${name}</h1>
+      <div class="subtitle">Modello fotogrammetrico 3D · Generato con DroneForge</div>
+      <div class="tags">
+        <span class="rp-tag">${type}</span>
+        ${drone ? `<span class="rp-tag">${drone}</span>` : ''}
+        <span class="rp-tag">${today}</span>
+        <span class="rp-tag">Meshroom · AliceVision</span>
+      </div>
+    </div>
+
+    <div class="rp-stats">
+      <div class="rp-stat">
+        <div class="rs-val">${modelStats.verts ? modelStats.verts.toLocaleString ? modelStats.verts.toLocaleString('it') : modelStats.verts : '—'}</div>
+        <div class="rs-label">Vertici</div>
+      </div>
+      <div class="rp-stat">
+        <div class="rs-val">${modelStats.faces ? modelStats.faces.toLocaleString ? modelStats.faces.toLocaleString('it') : modelStats.faces : '—'}</div>
+        <div class="rs-label">Facce</div>
+      </div>
+      <div class="rp-stat">
+        <div class="rs-val">${photos || '—'}</div>
+        <div class="rs-label">Foto usate</div>
+      </div>
+    </div>
+
+    ${screenshotData ? `<div class="rp-screenshot"><img src="${screenshotData}" alt="Vista 3D"></div>` : ''}
+
+    ${notes ? `<div class="rp-notes"><h3>Note e descrizione</h3><p>${notes.replace(/\n/g,'<br>')}</p></div>` : ''}
+
+    <div class="rp-notes">
+      <h3>Dettagli tecnici</h3>
+      <p>
+        <strong>File:</strong> ${modelStats.filename || '—'}<br>
+        <strong>Bounding box:</strong> ${modelStats.bbox || '—'}<br>
+        <strong>Software:</strong> Meshroom (AliceVision) → DroneForge 3D Viewer<br>
+        ${drone ? `<strong>Drone:</strong> ${drone}<br>` : ''}
+        ${photos ? `<strong>Immagini elaborate:</strong> ${photos}<br>` : ''}
+      </p>
+    </div>
+
+    <div class="rp-footer">
+      Generato con DroneForge 3D · ${new Date().toLocaleString('it-IT')}
+    </div>
+  `;
+
+  document.getElementById('report-preview').innerHTML = html;
+  document.getElementById('report-modal').classList.add('open');
+}
+
+function closeReport() { document.getElementById('report-modal').classList.remove('open'); }
+
+function downloadReport() {
+  const name = document.getElementById('rf-name').value || 'report3d';
+  const content = document.getElementById('report-preview').innerHTML;
+  const fullHtml = `<!DOCTYPE html>
+<html lang="it"><head><meta charset="UTF-8">
+<title>Report 3D — ${name}</title>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700;800&display=swap" rel="stylesheet">
+<style>
+body{background:#07090d;color:#dde4ef;font-family:'Outfit',sans-serif;max-width:800px;margin:40px auto;padding:0 24px}
+.rp-hero{background:#0d1117;border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:32px;text-align:center;margin-bottom:24px}
+.rp-hero h1{font-size:28px;font-weight:800;margin-bottom:6px}
+.subtitle{font-size:14px;color:#566478;margin-bottom:16px}
+.tags{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+.rp-tag{font-size:11px;font-family:monospace;padding:4px 10px;border-radius:20px;background:rgba(0,212,255,.08);color:#00d4ff;border:1px solid rgba(0,212,255,.18)}
+.rp-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:24px}
+.rp-stat{background:#131a22;border:1px solid rgba(255,255,255,.07);border-radius:10px;padding:16px;text-align:center}
+.rs-val{font-size:22px;font-weight:700;color:#00d4ff;font-family:monospace}
+.rs-label{font-size:11px;color:#566478;margin-top:4px}
+.rp-notes{background:#131a22;border:1px solid rgba(255,255,255,.07);border-radius:10px;padding:16px;margin-bottom:24px}
+.rp-notes h3{font-size:13px;font-weight:700;color:#00d4ff;margin-bottom:8px}
+.rp-notes p{font-size:13px;color:#566478;line-height:1.6}
+.rp-screenshot{border-radius:10px;overflow:hidden;border:1px solid rgba(255,255,255,.07);margin-bottom:24px}
+.rp-screenshot img{width:100%;display:block}
+.rp-footer{text-align:center;font-size:11px;color:#566478;font-family:monospace;padding-top:16px;border-top:1px solid rgba(255,255,255,.07)}
+</style></head><body>${content}</body></html>`;
+
+  const blob = new Blob([fullHtml], { type: 'text/html' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name.replace(/\s+/g,'_') + '_report3d.html';
+  a.click();
+}
+
+// Set today's date default
+document.getElementById('rf-date').valueAsDate = new Date();
+
+// Auto load demo if nothing loaded
+loadDemo();
+</script>
+</body>
+</html>
